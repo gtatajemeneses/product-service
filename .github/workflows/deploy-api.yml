@@ -1,0 +1,63 @@
+name: Deploy Product Service
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**/*.cs'
+      - '**/*.csproj'
+      - 'appsettings*.json'
+  workflow_dispatch:
+
+env:
+  # 1. Aquí defines la versión de .NET
+  DOTNET_VERSION: '10.0.x'
+  # 2. Aquí el nombre  de tu Web App en Azure
+  AZURE_WEBAPP_NAME: 'WAPPCUSAPPD01'
+  AZURE_TENANT_ID: '2c41a349-9d15-499e-89e9-25131a40b7df'           
+  AZURE_SUBSCRIPTION_ID: '6918ea5a-6300-49f8-be4e-7a7f116b4db5'
+
+jobs:
+  build-and-deploy:
+    # 3. le dice a GitHub que use tu contenedor ACI, no la nube pública
+    runs-on: self-hosted 
+    
+    steps:
+      - name: Descargar el código fuente
+        uses: actions/checkout@v4
+
+      # 4. Instala .NET 10 dentro del contenedor ACI en tiempo de ejecución
+      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restaurar dependencias
+        run: dotnet restore
+
+      - name: Compilar la aplicación
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Publicar la aplicación
+        run: dotnet publish --configuration Release --no-build --output ./publish_folder
+      
+      # Instalar Azure CLI en el contenedor limpio
+      - name: Instalar Azure CLI
+        run: curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+
+      # 5. Autenticación contra Azure
+      - name: Login en Azure
+        uses: azure/login@v2
+        with:
+          auth-type: IDENTITY
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      # 6. Despliegue de los binarios. 
+      # Como el runner está en la VNet, alcanzará el Private Endpoint sin problemas.
+      - name: Desplegar en Azure Web App Privada
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          package: ./publish_folder
